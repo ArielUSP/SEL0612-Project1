@@ -2,7 +2,7 @@ import plotly.express as px
 import plotly.graph_objs as go
 import pandas as pd
 import math
-
+import sys
 
 def fdtd(L, C, RL, kmax, dz, dt, vph, vfonte, rfonte, R=0, G=0, n0=0):
 
@@ -41,12 +41,20 @@ def fdtd(L, C, RL, kmax, dz, dt, vph, vfonte, rfonte, R=0, G=0, n0=0):
 		i = iprox
 		n = n + 1
 
-fpulso = lambda t: 1 if t < 10 / 2.69e8 and t > 0 else 0
-fconst = lambda t: 2
+if (len(sys.argv) < 3):
+	print("Falta parametros")
+	exit()
+
+def fonte(t): return 0
+if sys.argv[1] == 'pulso':
+	fonte = lambda t: 1 if t < 10 / 2.69e8 and t > 0 else 0
+elif sys.argv[1] == 'constante':
+	fonte = lambda t: 2
+
+RL = float(sys.argv[2])
 
 dt = 1.6e-9
-
-gen = (fdtd(1.853e-7, 7.41e-11, 0, 100, 1, dt, 2.69e8, fconst, 75))
+gen = (fdtd(1.853e-7, 7.41e-11, RL, 100, 1, dt, 2.69e8, fonte, 75))
 
 data = [{'z': k, 't': t, 'v': v} for t in range(0,math.ceil(100*10/2.69e8/dt)) for k, v in enumerate(next(gen)[1])]
 
