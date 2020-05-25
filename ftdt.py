@@ -41,10 +41,14 @@ def fdtd(L, C, RL, kmax, dz, dt, vph, vfonte, rfonte, R=0, G=0, n0=0):
 		i = iprox
 		n = n + 1
 
+fpulso = lambda t: 1 if t < 10 / 2.69e8 and t > 0 else 0
+fconst = lambda t: 2
 
-gen = (fdtd(1.853e-7, 7.41e-11, 0, 100, 1, 1.6e-9, 2.69e8, lambda t: 1 if t < 10/2.69e8 and t > 0 else 0, 75))  # * math.sin(1e9 * 2 * math.pi * 0)
+dt = 1.6e-9
 
-data = [{'z': k, 't': t, 'v': v} for t in range(0,2000) for k, v in enumerate(next(gen)[1])]
+gen = (fdtd(1.853e-7, 7.41e-11, 0, 100, 1, dt, 2.69e8, fconst, 75))
+
+data = [{'z': k, 't': t, 'v': v} for t in range(0,math.ceil(100*10/2.69e8/dt)) for k, v in enumerate(next(gen)[1])]
 
 
 fig = px.line(pd.DataFrame(data=data), x='z', y='v', animation_frame='t', range_y=[-4,4])
