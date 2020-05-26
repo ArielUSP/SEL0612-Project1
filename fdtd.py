@@ -1,65 +1,79 @@
 import plotly.express as px
 import plotly.graph_objs as go
-import pandas as pd
 import math
-import sys
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+from matplotlib.animation import FuncAnimation
+plt.style.use('seaborn-pastel')
 
-def fdtd(L, C, RL, kmax, dz, dt, vph, vfonte, rfonte, R=0, G=0, n0=0):
+#*-----------------------*
+#| Source types:         |
+#| 1. 2u(t)              | 
+#| 2. u(t)-u(t - l/10uf) |
+#*-----------------------*
 
-	v = [0 for x in range(0, kmax)]
-	i = [0 for x in range(0, kmax)]
+#*-----------------------*
+#| Load types:           |
+#| 1. Short Circuit      | 
+#| 2. Open Circuit       |
+#| 3. Resistive Load     |
+#*-----------------------*
 
-	d = dt / dz
-	re = d / L
-	rh = d / C
+SourceType = 1
+LoadType = 2
 
-	n = n0
-	while True:
-		iprox = [0] + [i[k] - re * (v[k] - v[k - 1]) for k in range(1, kmax)]
+tstart = 4 #start source at
+tstop = 10000 #stop source at
+kmax = 200 #max spa
+Nmax = 2200 #max time interations
+pi = math.pi
 
-		vprox = [0] + [v[k] - rh * (iprox[k + 1] - iprox[k]) for k in range(1, kmax - 1)] + [0]
-		
-		#fonte
-		iprox[1] = vfonte(n * dt) / rfonte
-		vprox[1] = vfonte(n * dt)
+L = 1.853133862211956e-07 #indutance
+C = 7.412535448847824e-11 #capacitance
+load_resist = 75 #ohms
+v_fase = 1/math.sqrt(L*C) #phase speed
+line_size = 20 #meters
 
-		#condições de contorno para V
-		vprox[0] = v[1] + ((vph*dt - dz)/(vph*dt + dz))*(vprox[1] - v[0])
-		vprox[-1] = v[-2] + ((vph*dt - dz)/(vph*dt + dz))*(vprox[-2] - v[-1])
+delz = line_size/kmax #space-step
+delt = (0.5*delz)/v_fase # time-step with stability condition
 
-		if RL == 0:
-			vprox[-2] = 0
-		elif RL != math.inf:
-			vprox[-2] = RL*iprox[-2]
+K1 = (delt/(C*delz))
+K2 = (delt/(L*delz))
 
-		if RL == math.inf:
-			iprox[-2] = 0
+V = [[0.0 for k in range(kmax+1)] for n in range(Nmax+1)]
+I = [[0.0 for k in range(kmax+1)] for n in range(Nmax+1)]
 
-		yield iprox, vprox
+for n in range(1,Nmax):
+	#now we iterate over all k values
+	for k in range(1, kmax):
+		I[n][k+1] = I[n-1][k+1] - K2*(V[n-1][k+1]-V[n-1][k])
+		if(k == 2): #source is added here
+			if(SourceType == 1):
+				I[n][k+1] = I[n][k+1] + (2 if n >= tstart else 0)
+			if(SourceType == 2):
+				I[n][k+1] = I[n][k+1] + (1 if n >= tstart else 0) - (1 if n >= (tstart + (line_size/(10*v_fase))) else 0)
+	if(LoadType == 2): #to implement an open circuit
+		I[n][kmax-1] = 0
+	for k in range(1,kmax-1):
+		V[n][k] = V[n-1][k] - K1*(I[n][k + 1] - I[n][k])
+		if(k == 2): #source is added here
+			if(SourceType == 1):
+				V[n][k] = V[n][k] + load_resist*(2 if n >= tstart else 0)
+			if(SourceType == 2):
+				V[n][k] = V[n][k] + load_resist*((1 if n >= tstart else 0) - (1 if n >= (tstart + (line_size/(10*v_fase))) else 0))
 
-		v = vprox
-		i = iprox
-		n = n + 1
+	#push boundary conditions
+	V[n][kmax] = V[n-1][kmax-1] + ((v_fase*delt - delz)/(v_fase*delt + delz)*(V[n][kmax-1]-V[n-1][kmax]))
+	V[n][1] = V[n-1][2] + ((v_fase*delt - delz)/(v_fase*delt + delz)*(V[n][2]-V[n-1][1]))
+	if(LoadType == 1):
+		V[n][kmax-1] = 0
+	if(LoadType == 2):
+		V[n][kmax-1] = 75*I[n][kmax-1]
+	#faz alguma coisa com essa nova geracao
 
-if (len(sys.argv) < 3):
-	print("Falta parametros")
-	exit()
-
-def fonte(t): return 0
-if sys.argv[1] == 'pulso':
-	fonte = lambda t: 1 if t < 10 / 2.69e8 and t > 0 else 0
-elif sys.argv[1] == 'constante':
-	fonte = lambda t: 2
-
-RL = float(sys.argv[2])
-
-dt = 1.6e-9
-gen = (fdtd(1.853e-7, 7.41e-11, RL, 100, 1, dt, 2.69e8, fonte, 75))
-
-data = [{'z': k, 't': t, 'v': v} for t in range(0,math.ceil(100*10/2.69e8/dt)) for k, v in enumerate(next(gen)[1])]
-
-
-fig = px.line(pd.DataFrame(data=data), x='z', y='v', animation_frame='t', range_y=[-4,4])
-
-#fig = go.Figure(frames=[go.Frame(data=[go.Line(x=[0,1,2,3,4,5,6,7,8], y=next(gen)[1] )]) for t in range(0,200)])
+data = [{'z': k, 't': n, 'v': V[n][k], 'i':I[n][k]} for n in range(Nmax) for k in range(kmax)]
+fig = px.line(pd.DataFrame(data=data), x='z', y='v', animation_frame='t', range_y=[-4, 4])
+fig2 = px.line(pd.DataFrame(data=data), x='z', y='i', animation_frame='t', range_y=[-4, 4])
 fig.show()
+fig2.show()
